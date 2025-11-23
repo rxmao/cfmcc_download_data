@@ -64,16 +64,41 @@ class CfmmcClient:
         self._ensure_logged_in()
         token = self._fetch_customer_token()
         self._set_parameter(trade_date, by_type, token)
-        resp = self.session.get(self.DOWNLOAD_URL, timeout=30)
+
+        # 添加更详细的请求头，模拟浏览器
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Referer': self.CUSTOMER_VIEW_URL,
+        }
+
+        resp = self.session.get(self.DOWNLOAD_URL, headers=headers, timeout=30)
         resp.raise_for_status()
+
+        # 调试信息：记录响应状态
+        logging.debug("Response status: %d, Content-Type: %s, Content-Length: %d",
+                     resp.status_code, resp.headers.get('Content-Type', 'unknown'), len(resp.content))
 
         # 检查响应内容是否为空
         if not resp.content or len(resp.content) == 0:
-            raise RuntimeError(f"下载的文件内容为空，日期: {trade_date:%Y-%m-%d}，可能该日期无交易数据")
+            raise RuntimeError(f"下载的文件内容为空，日期: {trade_date:%Y-%m-%d}，可能该日期无交易数据或触发了反爬虫限制")
+
+        # 检查是否返回了 HTML 页面（而不是 Excel 文件）
+        if resp.content.startswith(b'<!DOCTYPE') or resp.content.startswith(b'<html'):
+            # 尝试提取错误信息
+            content_preview = resp.content[:500].decode('utf-8', errors='ignore')
+            logging.error("服务器返回了HTML页面而不是Excel文件。内容预览: %s", content_preview)
+            raise RuntimeError(f"服务器返回了网页而不是Excel文件，可能登录已过期或触发了反爬虫机制")
 
         # 检查是否是有效的 Excel 文件（XLS 文件头应该以 D0CF11E0 开始）
         if len(resp.content) < 8 or not resp.content.startswith(b'\xD0\xCF\x11\xE0'):
-            logging.warning("下载的文件可能不是有效的 Excel 文件，文件大小: %d 字节", len(resp.content))
+            # 记录实际接收到的内容前16字节（十六进制）
+            content_hex = resp.content[:16].hex() if resp.content else "empty"
+            logging.warning("下载的文件可能不是有效的 Excel 文件，文件大小: %d 字节，文件头: %s",
+                          len(resp.content), content_hex)
 
         # 确定输出目录（在基础目录下创建以用户ID命名的子目录）
         if output_dir is None:

@@ -72,6 +72,9 @@ class CfmmcClient:
 
         self._set_parameter(trade_date, by_type, token)
         logging.debug("参数设置完成")
+        
+        # 等待服务器处理参数设置（模拟人工操作延迟）
+        time.sleep(1.5)
 
         # 添加更详细的请求头，模拟浏览器
         headers = {
@@ -86,6 +89,7 @@ class CfmmcClient:
         logging.debug("发送下载请求到: %s", self.DOWNLOAD_URL)
         logging.debug("当前会话 cookies: %d 个", len(self.session.cookies))
 
+        # stream=True 避免自动解压，获取原始响应
         resp = self.session.get(self.DOWNLOAD_URL, headers=headers, timeout=30)
         resp.raise_for_status()
 
@@ -93,6 +97,12 @@ class CfmmcClient:
         logging.info("响应状态: %d | Content-Type: %s | 文件大小: %d 字节",
                      resp.status_code, resp.headers.get('Content-Type', 'unknown'), len(resp.content))
         logging.debug("完整响应头: %s", dict(resp.headers))
+        
+        # 如果返回空内容，记录可能的原因
+        if len(resp.content) == 0:
+            logging.warning("服务器返回了空响应。可能原因:")
+            logging.warning("  1. 该日期 %s 无交易数据（周末/节假日/历史过久）", trade_date.strftime('%Y-%m-%d'))
+            logging.warning("  2. 服务器端反爬虫检测")
 
         # 检查响应内容是否为空
         if not resp.content or len(resp.content) == 0:

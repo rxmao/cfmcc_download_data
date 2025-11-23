@@ -2,15 +2,30 @@ import argparse
 import logging
 import os
 import re
-from datetime import date, datetime
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from urllib.parse import urljoin
 
 import ddddocr
 import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def generate_date_range(start_date: date, end_date: date) -> List[date]:
+    """生成日期范围列表（包含起始和结束日期）"""
+    if start_date > end_date:
+        raise ValueError(f"开始日期 {start_date} 不能晚于结束日期 {end_date}")
+
+    date_list = []
+    current_date = start_date
+    while current_date <= end_date:
+        date_list.append(current_date)
+        current_date += timedelta(days=1)
+
+    return date_list
 
 
 class CfmmcClient:
@@ -45,13 +60,21 @@ class CfmmcClient:
             logging.warning("Login attempt %s failed, retrying...", attempt)
         raise RuntimeError("Unable to login CFMMC after multiple attempts.")
 
-    def download_daily_report(self, trade_date: datetime, by_type: str = "trade") -> Path:
+    def download_daily_report(self, trade_date: datetime, by_type: str = "trade", output_dir: Optional[Path] = None) -> Path:
         self._ensure_logged_in()
         token = self._fetch_customer_token()
         self._set_parameter(trade_date, by_type, token)
         resp = self.session.get(self.DOWNLOAD_URL, timeout=30)
         resp.raise_for_status()
-        file_path = Path(f"cfmmc_{trade_date:%Y%m%d}.xls")
+
+        # 确定输出目录
+        if output_dir is None:
+            output_dir = Path(".")
+        else:
+            # 创建目录（如果不存在）
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = output_dir / f"cfmmc_{trade_date:%Y%m%d}.xls"
         file_path.write_bytes(resp.content)
         logging.info("Daily report saved to %s", file_path)
         return file_path
@@ -127,16 +150,22 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  # 使用环境变量
+  # 下载单个日期的报告（默认保存到 ./data 目录）
   export CFMMC_USER_ID="your_user_id"
   export CFMMC_PASSWORD="your_password"
   python cfmmc_client.py --date 2025-11-21
 
-  # 使用命令行参数
-  python cfmmc_client.py --user your_user_id --password your_password --date 2025-11-21
+  # 下载日期区间的报告
+  python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10
+
+  # 指定输出目录
+  python cfmmc_client.py --date 2025-11-21 --output-dir ./reports
 
   # 指定报告类型
   python cfmmc_client.py --date 2025-11-21 --type settlement
+
+  # 批量下载并跳过周末
+  python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-30 --skip-weekends
         """
     )
 
@@ -153,8 +182,17 @@ def main() -> None:
     parser.add_argument(
         '-d', '--date',
         type=str,
-        required=True,
-        help='交易日期，格式: YYYY-MM-DD (例如: 2025-11-21)'
+        help='单个交易日期，格式: YYYY-MM-DD (例如: 2025-11-21)'
+    )
+    parser.add_argument(
+        '--start-date',
+        type=str,
+        help='开始日期，格式: YYYY-MM-DD (与 --end-date 配合使用下载区间)'
+    )
+    parser.add_argument(
+        '--end-date',
+        type=str,
+        help='结束日期，格式: YYYY-MM-DD (与 --start-date 配合使用下载区间)'
     )
     parser.add_argument(
         '-t', '--type',
@@ -164,10 +202,32 @@ def main() -> None:
         help='报告类型: trade (交易报告) 或 settlement (结算报告)，默认: trade'
     )
     parser.add_argument(
+        '--skip-weekends',
+        action='store_true',
+        help='跳过周末（周六和周日）'
+    )
+    parser.add_argument(
+        '--continue-on-error',
+        action='store_true',
+        help='遇到错误时继续下载其他日期的报告'
+    )
+    parser.add_argument(
         '--max-attempts',
         type=int,
         default=3,
         help='最大登录尝试次数，默认: 3'
+    )
+    parser.add_argument(
+        '--delay',
+        type=float,
+        default=1.0,
+        help='批量下载时每次请求之间的延迟（秒），默认: 1.0'
+    )
+    parser.add_argument(
+        '-o', '--output-dir',
+        type=str,
+        default='./data',
+        help='报告文件保存目录，默认: ./data'
     )
 
     args = parser.parse_args()
@@ -179,11 +239,31 @@ def main() -> None:
     if not user_id or not password:
         parser.error('必须提供用户 ID 和密码，可通过命令行参数或环境变量 CFMMC_USER_ID 和 CFMMC_PASSWORD 设置')
 
+    # 验证日期参数
+    if args.date and (args.start_date or args.end_date):
+        parser.error('不能同时使用 --date 和 --start-date/--end-date 参数')
+
+    if not args.date and not (args.start_date and args.end_date):
+        parser.error('必须提供 --date 或 --start-date 和 --end-date 参数')
+
     # 解析日期
+    date_list: List[date] = []
     try:
-        trade_date = datetime.strptime(args.date, '%Y-%m-%d').date()
-    except ValueError:
-        parser.error(f'无效的日期格式: {args.date}，请使用 YYYY-MM-DD 格式')
+        if args.date:
+            # 单个日期
+            date_list = [datetime.strptime(args.date, '%Y-%m-%d').date()]
+        else:
+            # 日期区间
+            start_date = datetime.strptime(args.start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(args.end_date, '%Y-%m-%d').date()
+            date_list = generate_date_range(start_date, end_date)
+
+            # 跳过周末
+            if args.skip_weekends:
+                date_list = [d for d in date_list if d.weekday() < 5]  # 0-4 表示周一到周五
+
+    except ValueError as e:
+        parser.error(f'无效的日期格式，请使用 YYYY-MM-DD 格式: {e}')
 
     # 创建客户端并下载报告
     try:
@@ -197,10 +277,51 @@ def main() -> None:
         logging.info('正在登录...')
         client.login()
 
-        logging.info('正在下载 %s 的%s报告...', args.date, '交易' if args.type == 'trade' else '结算')
-        file_path = client.download_daily_report(trade_date, by_type=args.type)
+        # 创建输出目录
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info('报告将保存到目录: %s', output_dir.absolute())
 
-        logging.info('✓ 下载完成！文件保存在: %s', file_path.absolute())
+        report_type_name = '交易' if args.type == 'trade' else '结算'
+        total_dates = len(date_list)
+        success_count = 0
+        failed_count = 0
+        failed_dates = []
+
+        logging.info('准备下载 %d 个日期的%s报告...', total_dates, report_type_name)
+
+        for idx, trade_date in enumerate(date_list, 1):
+            try:
+                logging.info('[%d/%d] 正在下载 %s 的%s报告...', idx, total_dates, trade_date, report_type_name)
+                file_path = client.download_daily_report(trade_date, by_type=args.type, output_dir=output_dir)
+                logging.info('✓ [%d/%d] 下载完成！文件保存在: %s', idx, total_dates, file_path.absolute())
+                success_count += 1
+
+                # 批量下载时添加延迟，避免请求过于频繁
+                if total_dates > 1 and idx < total_dates:
+                    time.sleep(args.delay)
+
+            except Exception as e:
+                failed_count += 1
+                failed_dates.append(trade_date)
+                logging.error('✗ [%d/%d] %s 下载失败: %s', idx, total_dates, trade_date, str(e))
+
+                if not args.continue_on_error:
+                    logging.error('已停止下载。使用 --continue-on-error 参数可在遇到错误时继续下载')
+                    raise
+
+        # 输出统计信息
+        if total_dates > 1:
+            logging.info('')
+            logging.info('=' * 60)
+            logging.info('下载统计:')
+            logging.info('  总数: %d', total_dates)
+            logging.info('  成功: %d', success_count)
+            logging.info('  失败: %d', failed_count)
+            if failed_dates:
+                logging.info('  失败日期: %s', ', '.join(str(d) for d in failed_dates))
+            logging.info('=' * 60)
+
     except Exception as e:
         logging.error('✗ 操作失败: %s', str(e))
         raise

@@ -7,9 +7,13 @@
 - ✅ 自动登录 CFMMC 投资者服务网站
 - ✅ 使用 OCR 技术自动识别验证码
 - ✅ 支持下载指定日期的交易报告（Excel 格式）
+- ✅ **支持日期区间批量下载**
 - ✅ 支持下载交易报告和结算报告
+- ✅ **自动跳过周末（可选）**
 - ✅ 自动会话管理和重连
 - ✅ 支持环境变量和命令行参数配置
+- ✅ **批量下载进度跟踪和统计**
+- ✅ **错误容错机制（可选择遇错继续）**
 - ✅ 详细的日志输出
 
 ## 系统要求
@@ -82,7 +86,7 @@ source .env
 export CFMMC_USER_ID="your_user_id"
 export CFMMC_PASSWORD="your_password"
 
-# 下载指定日期的交易报告
+# 下载指定日期的交易报告（默认保存到 ./data 目录）
 python cfmmc_client.py --date 2025-11-21
 ```
 
@@ -93,19 +97,47 @@ python cfmmc_client.py --user your_user_id --password your_password --date 2025-
 
 ### 高级用法
 
-#### 下载结算报告
+#### 1. 下载日期区间的报告
+
+批量下载多天的报告：
+```bash
+# 下载 2025-11-01 到 2025-11-10 之间所有日期的报告
+python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10
+
+# 跳过周末（周六和周日）
+python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-30 --skip-weekends
+
+# 遇到错误时继续下载其他日期
+python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10 --continue-on-error
+```
+
+#### 2. 指定输出目录
+
+```bash
+# 保存到自定义目录
+python cfmmc_client.py --date 2025-11-21 --output-dir ./reports
+
+# 默认保存到 ./data 目录
+python cfmmc_client.py --date 2025-11-21
+```
+
+#### 3. 下载结算报告
 
 ```bash
 python cfmmc_client.py --date 2025-11-21 --type settlement
 ```
 
-#### 设置最大登录尝试次数
+#### 4. 调整批量下载参数
 
 ```bash
+# 自定义请求延迟（避免请求过于频繁）
+python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10 --delay 2.0
+
+# 增加登录重试次数
 python cfmmc_client.py --date 2025-11-21 --max-attempts 5
 ```
 
-#### 查看帮助信息
+#### 5. 查看帮助信息
 
 ```bash
 python cfmmc_client.py --help
@@ -117,11 +149,18 @@ python cfmmc_client.py --help
 |------|------|------|------|--------|
 | `--user` | `-u` | CFMMC 用户 ID | 否* | - |
 | `--password` | `-p` | CFMMC 密码 | 否* | - |
-| `--date` | `-d` | 交易日期 (YYYY-MM-DD) | 是 | - |
+| `--date` | `-d` | 单个交易日期 (YYYY-MM-DD) | 否** | - |
+| `--start-date` | - | 开始日期 (YYYY-MM-DD) | 否** | - |
+| `--end-date` | - | 结束日期 (YYYY-MM-DD) | 否** | - |
 | `--type` | `-t` | 报告类型 (trade/settlement) | 否 | trade |
+| `--output-dir` | `-o` | 报告保存目录 | 否 | ./data |
+| `--skip-weekends` | - | 跳过周末 | 否 | false |
+| `--continue-on-error` | - | 遇错继续下载 | 否 | false |
 | `--max-attempts` | - | 最大登录尝试次数 | 否 | 3 |
+| `--delay` | - | 批量下载请求延迟（秒） | 否 | 1.0 |
 
 \* 必须通过命令行参数或环境变量提供
+\*\* 必须提供 `--date` 或 `--start-date` 和 `--end-date` 组合
 
 ## 项目结构
 

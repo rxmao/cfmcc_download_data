@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 import ddddocr
 import requests
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def generate_date_range(start_date: date, end_date: date) -> List[date]:
@@ -61,9 +61,17 @@ class CfmmcClient:
         raise RuntimeError("Unable to login CFMMC after multiple attempts.")
 
     def download_daily_report(self, trade_date: datetime, by_type: str = "trade", output_dir: Optional[Path] = None) -> Path:
+        logging.info("=" * 60)
+        logging.info("开始下载日期 %s 的报表", trade_date.strftime('%Y-%m-%d'))
+
         self._ensure_logged_in()
+        logging.debug("登录检查完成")
+
         token = self._fetch_customer_token()
+        logging.debug("获取到 TOKEN: %s", token[:20] + "..." if len(token) > 20 else token)
+
         self._set_parameter(trade_date, by_type, token)
+        logging.debug("参数设置完成")
 
         # 添加更详细的请求头，模拟浏览器
         headers = {
@@ -79,7 +87,7 @@ class CfmmcClient:
         resp.raise_for_status()
 
         # 调试信息：记录响应状态
-        logging.debug("Response status: %d, Content-Type: %s, Content-Length: %d",
+        logging.info("响应状态: %d, Content-Type: %s, 文件大小: %d 字节",
                      resp.status_code, resp.headers.get('Content-Type', 'unknown'), len(resp.content))
 
         # 检查响应内容是否为空

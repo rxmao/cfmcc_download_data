@@ -315,24 +315,25 @@ def main() -> None:
         if not args.date and not (args.start_date and args.end_date):
             parser.error('必须提供 --date 或 --start-date 和 --end-date 参数')
 
-    # 解析日期
+    # 解析日期（find-earliest 模式不需要提前解析）
     date_list: List[date] = []
-    try:
-        if args.date:
-            # 单个日期
-            date_list = [datetime.strptime(args.date, '%Y-%m-%d').date()]
-        else:
-            # 日期区间
-            start_date = datetime.strptime(args.start_date, '%Y-%m-%d').date()
-            end_date = datetime.strptime(args.end_date, '%Y-%m-%d').date()
-            date_list = generate_date_range(start_date, end_date)
+    if not args.find_earliest:
+        try:
+            if args.date:
+                # 单个日期
+                date_list = [datetime.strptime(args.date, '%Y-%m-%d').date()]
+            else:
+                # 日期区间
+                start_date = datetime.strptime(args.start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(args.end_date, '%Y-%m-%d').date()
+                date_list = generate_date_range(start_date, end_date)
 
-            # 跳过周末
-            if args.skip_weekends:
-                date_list = [d for d in date_list if d.weekday() < 5]  # 0-4 表示周一到周五
+                # 跳过周末
+                if args.skip_weekends:
+                    date_list = [d for d in date_list if d.weekday() < 5]  # 0-4 表示周一到周五
 
-    except ValueError as e:
-        parser.error(f'无效的日期格式，请使用 YYYY-MM-DD 格式: {e}')
+        except ValueError as e:
+            parser.error(f'无效的日期格式，请使用 YYYY-MM-DD 格式: {e}')
 
     # 创建客户端并下载报告
     try:
@@ -356,7 +357,12 @@ def main() -> None:
 
         # 处理 find-earliest 模式
         if args.find_earliest:
-            start_date = datetime.strptime(args.find_earliest, '%Y-%m-%d').date()
+            try:
+                start_date = datetime.strptime(args.find_earliest, '%Y-%m-%d').date()
+            except ValueError as e:
+                logging.error('无效的日期格式: %s，请使用 YYYY-MM-DD 格式', args.find_earliest)
+                raise SystemExit(1)
+
             logging.info('=' * 60)
             logging.info('开始向前测试，寻找最早可下载日期...')
             logging.info('起始日期: %s', start_date)

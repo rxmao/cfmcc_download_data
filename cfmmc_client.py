@@ -222,6 +222,9 @@ def main() -> None:
 
   # 批量下载并跳过周末
   python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-30 --skip-weekends
+
+  # 从指定日期开始向前测试，找到最早可下载的日期
+  python cfmmc_client.py --find-earliest 2025-11-21
         """
     )
 
@@ -285,6 +288,11 @@ def main() -> None:
         default='./data',
         help='报告文件保存目录，默认: ./data'
     )
+    parser.add_argument(
+        '--find-earliest',
+        type=str,
+        help='从指定日期开始向前测试，找到最早可下载的日期，格式: YYYY-MM-DD'
+    )
 
     args = parser.parse_args()
 
@@ -296,11 +304,16 @@ def main() -> None:
         parser.error('必须提供用户 ID 和密码，可通过命令行参数或环境变量 CFMMC_USER_ID 和 CFMMC_PASSWORD 设置')
 
     # 验证日期参数
-    if args.date and (args.start_date or args.end_date):
-        parser.error('不能同时使用 --date 和 --start-date/--end-date 参数')
+    if args.find_earliest:
+        # find-earliest 模式不需要其他日期参数
+        if args.date or args.start_date or args.end_date:
+            parser.error('使用 --find-earliest 时不能同时使用其他日期参数')
+    else:
+        if args.date and (args.start_date or args.end_date):
+            parser.error('不能同时使用 --date 和 --start-date/--end-date 参数')
 
-    if not args.date and not (args.start_date and args.end_date):
-        parser.error('必须提供 --date 或 --start-date 和 --end-date 参数')
+        if not args.date and not (args.start_date and args.end_date):
+            parser.error('必须提供 --date 或 --start-date 和 --end-date 参数')
 
     # 解析日期
     date_list: List[date] = []
@@ -340,6 +353,46 @@ def main() -> None:
         # 报告将保存到 output_dir/user_id/ 目录下
         user_output_dir = output_dir / user_id
         logging.info('报告将保存到目录: %s', user_output_dir.absolute())
+
+        # 处理 find-earliest 模式
+        if args.find_earliest:
+            start_date = datetime.strptime(args.find_earliest, '%Y-%m-%d').date()
+            logging.info('=' * 60)
+            logging.info('开始向前测试，寻找最早可下载日期...')
+            logging.info('起始日期: %s', start_date)
+            logging.info('=' * 60)
+
+            current_date = start_date
+            earliest_available = None
+            consecutive_failures = 0
+            max_consecutive_failures = 30  # 连续失败30天后停止
+
+            while consecutive_failures < max_consecutive_failures:
+                try:
+                    logging.info('\n测试日期: %s', current_date)
+                    client.download_daily_report(current_date, by_type=args.type, output_dir=output_dir)
+                    logging.info('✓ %s 可以下载', current_date)
+                    earliest_available = current_date
+                    consecutive_failures = 0  # 重置失败计数
+                except Exception as e:
+                    logging.warning('✗ %s 无法下载: %s', current_date, str(e))
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        logging.info('\n已连续 %d 天无法下载，停止测试。', max_consecutive_failures)
+                        break
+
+                # 向前推一天
+                current_date = current_date - timedelta(days=1)
+                time.sleep(args.delay)
+
+            logging.info('\n' + '=' * 60)
+            if earliest_available:
+                logging.info('✓ 找到最早可下载日期: %s', earliest_available)
+                logging.info('建议下载范围: %s 到 %s', earliest_available, start_date)
+            else:
+                logging.info('✗ 在测试范围内未找到可下载的日期')
+            logging.info('=' * 60)
+            return
 
         report_type_name = '交易' if args.type == 'trade' else '结算'
         total_dates = len(date_list)

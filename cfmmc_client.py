@@ -58,6 +58,9 @@ class CfmmcClient:
                 logging.info("CFMMC login succeed.")
                 return
             logging.warning("Login attempt %s failed, retrying...", attempt)
+            # 登录失败后等待，避免过快重试被识别为机器人
+            if attempt < self.max_login_attempts:
+                time.sleep(2)
         raise RuntimeError("Unable to login CFMMC after multiple attempts.")
 
     def download_daily_report(self, trade_date: datetime, by_type: str = "trade", output_dir: Optional[Path] = None) -> Path:

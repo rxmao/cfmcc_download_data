@@ -83,12 +83,16 @@ class CfmmcClient:
             'Referer': self.CUSTOMER_VIEW_URL,
         }
 
+        logging.debug("发送下载请求到: %s", self.DOWNLOAD_URL)
+        logging.debug("当前会话 cookies: %d 个", len(self.session.cookies))
+
         resp = self.session.get(self.DOWNLOAD_URL, headers=headers, timeout=30)
         resp.raise_for_status()
 
         # 调试信息：记录响应状态
-        logging.info("响应状态: %d, Content-Type: %s, 文件大小: %d 字节",
+        logging.info("响应状态: %d | Content-Type: %s | 文件大小: %d 字节",
                      resp.status_code, resp.headers.get('Content-Type', 'unknown'), len(resp.content))
+        logging.debug("完整响应头: %s", dict(resp.headers))
 
         # 检查响应内容是否为空
         if not resp.content or len(resp.content) == 0:

@@ -67,6 +67,14 @@ class CfmmcClient:
         resp = self.session.get(self.DOWNLOAD_URL, timeout=30)
         resp.raise_for_status()
 
+        # 检查响应内容是否为空
+        if not resp.content or len(resp.content) == 0:
+            raise RuntimeError(f"下载的文件内容为空，日期: {trade_date:%Y-%m-%d}，可能该日期无交易数据")
+
+        # 检查是否是有效的 Excel 文件（XLS 文件头应该以 D0CF11E0 开始）
+        if len(resp.content) < 8 or not resp.content.startswith(b'\xD0\xCF\x11\xE0'):
+            logging.warning("下载的文件可能不是有效的 Excel 文件，文件大小: %d 字节", len(resp.content))
+
         # 确定输出目录（在基础目录下创建以用户ID命名的子目录）
         if output_dir is None:
             output_dir = Path(".")
@@ -77,7 +85,7 @@ class CfmmcClient:
 
         file_path = user_dir / f"cfmmc_{trade_date:%Y%m%d}.xls"
         file_path.write_bytes(resp.content)
-        logging.info("Daily report saved to %s", file_path)
+        logging.info("Daily report saved to %s (size: %d bytes)", file_path, len(resp.content))
         return file_path
 
     def _fetch_login_page(self) -> Tuple[str, str]:

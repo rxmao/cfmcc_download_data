@@ -10,6 +10,7 @@
 - ✅ **支持日期区间批量下载**
 - ✅ 支持下载交易报告和结算报告
 - ✅ **自动跳过周末（可选）**
+- ✅ **多账户支持（自动按用户ID分目录存储）**
 - ✅ 自动会话管理和重连
 - ✅ 支持环境变量和命令行参数配置
 - ✅ **批量下载进度跟踪和统计**
@@ -111,23 +112,49 @@ python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-30 --skip-week
 python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10 --continue-on-error
 ```
 
-#### 2. 指定输出目录
+#### 2. 多账户支持
+
+程序会自动为每个账户创建独立的子目录，文件结构如下：
+```
+./data/
+├── user_id_1/
+│   ├── cfmmc_20251101.xls
+│   └── cfmmc_20251102.xls
+└── user_id_2/
+    ├── cfmmc_20251101.xls
+    └── cfmmc_20251102.xls
+```
+
+使用不同账户下载：
+```bash
+# 账户 1
+python cfmmc_client.py --user account1 --password pass1 --date 2025-11-21
+
+# 账户 2
+python cfmmc_client.py --user account2 --password pass2 --date 2025-11-21
+
+# 所有文件会自动保存到各自的目录：
+# ./data/account1/cfmmc_20251121.xls
+# ./data/account2/cfmmc_20251121.xls
+```
+
+#### 3. 指定输出目录
 
 ```bash
-# 保存到自定义目录
+# 保存到自定义目录（仍会在该目录下按用户ID创建子目录）
 python cfmmc_client.py --date 2025-11-21 --output-dir ./reports
 
-# 默认保存到 ./data 目录
+# 默认保存到 ./data/用户ID/ 目录
 python cfmmc_client.py --date 2025-11-21
 ```
 
-#### 3. 下载结算报告
+#### 4. 下载结算报告
 
 ```bash
 python cfmmc_client.py --date 2025-11-21 --type settlement
 ```
 
-#### 4. 调整批量下载参数
+#### 5. 调整批量下载参数
 
 ```bash
 # 自定义请求延迟（避免请求过于频繁）
@@ -137,7 +164,7 @@ python cfmmc_client.py --start-date 2025-11-01 --end-date 2025-11-10 --delay 2.0
 python cfmmc_client.py --date 2025-11-21 --max-attempts 5
 ```
 
-#### 5. 查看帮助信息
+#### 6. 查看帮助信息
 
 ```bash
 python cfmmc_client.py --help
@@ -171,8 +198,20 @@ cfmcc_download_data/
 ├── .env.example         # 环境变量配置示例
 ├── .gitignore           # Git 忽略文件配置
 ├── README.md            # 项目说明文档
-└── LICENSE              # 开源许可证
+├── LICENSE              # 开源许可证
+└── data/                # 下载的报告文件（按账户分目录）
+    ├── user_id_1/       # 账户 1 的报告
+    │   ├── cfmmc_20251101.xls
+    │   └── cfmmc_20251102.xls
+    └── user_id_2/       # 账户 2 的报告
+        ├── cfmmc_20251101.xls
+        └── cfmmc_20251102.xls
 ```
+
+**说明**:
+- `data/` 目录默认用于存储下载的报告文件
+- 程序会自动为每个用户ID创建独立的子目录
+- 这样可以方便管理多个账户的数据，避免文件混淆
 
 ## 代码结构
 

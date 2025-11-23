@@ -67,14 +67,15 @@ class CfmmcClient:
         resp = self.session.get(self.DOWNLOAD_URL, timeout=30)
         resp.raise_for_status()
 
-        # 确定输出目录
+        # 确定输出目录（在基础目录下创建以用户ID命名的子目录）
         if output_dir is None:
             output_dir = Path(".")
-        else:
-            # 创建目录（如果不存在）
-            output_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = output_dir / f"cfmmc_{trade_date:%Y%m%d}.xls"
+        # 为每个账户创建独立的子目录
+        user_dir = output_dir / self.user_id
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = user_dir / f"cfmmc_{trade_date:%Y%m%d}.xls"
         file_path.write_bytes(resp.content)
         logging.info("Daily report saved to %s", file_path)
         return file_path
@@ -280,7 +281,10 @@ def main() -> None:
         # 创建输出目录
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        logging.info('报告将保存到目录: %s', output_dir.absolute())
+
+        # 报告将保存到 output_dir/user_id/ 目录下
+        user_output_dir = output_dir / user_id
+        logging.info('报告将保存到目录: %s', user_output_dir.absolute())
 
         report_type_name = '交易' if args.type == 'trade' else '结算'
         total_dates = len(date_list)
